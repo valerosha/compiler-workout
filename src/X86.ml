@@ -84,9 +84,7 @@ let show instr =
 open SM
 
 (* Symbolic stack machine evaluator
-
      compile : env -> prg -> env * instr list
-
    Take an environment, a stack machine program, and returns a pair --- the updated environment and the list
    of x86 instructions
 *)
@@ -131,6 +129,12 @@ let compile env code =
       in
       (if p then env, code else let y, env = env#allocate in env, code @ [Mov (eax, y)])
     in
+    let getCode = function
+		    | c   -> if (c > 'Z')
+                             then Char.code c - 70
+                             else Char.code c - 64 
+                    | '_' -> 53
+    in 
     match scode with
     | [] -> env, []
     | instr :: scode' ->
@@ -251,6 +255,18 @@ let compile env code =
              else env, [Jmp env#epilogue]
              
           | CALL (f, n, p) -> call env f n p
+          | SEXP (t, n)    -> let reprSexp s = 
+                                let tagL = String.length s in
+                                let srt  = String.sub s 0 (min tagL 5) in
+		                let rec reprTag tg l br k = if (l > k) 
+                                                            then br else
+                                                            reprTag tg l ((br lsl 6) lor 
+                                                                          (getCode tg.[k])) (k + 1) 
+                                in reprTag srt tagL 0 0
+                                in
+                                let env', ex = call env ".sexp" (n + 1) true in
+                                  env', [Push (L (reprSexp t))] @ 
+                                        ex
         in
         let env'', code'' = compile' env' scode' in
 	env'', code' @ code''
@@ -263,8 +279,14 @@ module S = Set.Make (String)
 (* A map indexed by strings *)
 module M = Map.Make (String)
 
+let list_init n f =
+  let rec init' i n f =
+    if i >= n then []
+    else (f i) :: (init' (i + 1) n f)
+in init' 0 n f
+
 (* Environment implementation *)
-let make_assoc l = List.combine l (List.init (List.length l) (fun x -> x))
+let make_assoc l = List.combine l (list_init (List.length l) (fun x -> x))
                      
 class env =
   object (self)
@@ -372,4 +394,3 @@ let build prog name =
   close_out outf;
   let inc = try Sys.getenv "RC_RUNTIME" with _ -> "../runtime" in
   Sys.command (Printf.sprintf "gcc -m32 -o %s %s/runtime.o %s.s" name inc name)
- 
